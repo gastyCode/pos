@@ -24,7 +24,8 @@ int main(int argc, char *argv[])
     sll_add(sll, &number);
   }
 
-  sll_for_each(sll, print_item, NULL, NULL, NULL); 
+  sll_for_each(sll, print_item, NULL, NULL, NULL);
+  sll_clear(sll);
 
   return 0;
 }
