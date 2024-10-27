@@ -7,6 +7,6 @@ project(
   LANGUAGES   C
 )
 
-add_subdirectory(./libsll)
-add_subdirectory(./sll-example)
-add_subdirectory(./sll-tests)
+add_subdirectory(libsll)
+add_subdirectory(sll-example)
+add_subdirectory(sll-tests)
