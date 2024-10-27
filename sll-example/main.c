@@ -16,11 +16,10 @@ int main(int argc, char *argv[])
   int from = atoi(argv[2]);
   int to = atoi(argv[3]);
 
-  sll* sll;
+  sll* sll = (struct sll*)malloc(sizeof(struct sll));
   sll_init(sll, sizeof(int));
   for (int i = 0; i < n; i++) {
     int number = rand() % (to - from + 1) + from;
-    void* n = &number;
     sll_add(sll, &number);
   }
 
