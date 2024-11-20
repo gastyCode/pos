@@ -32,3 +32,11 @@ void syn_buff_pop(synchronized_buffer * this, coordinates * output) {
   pthread_cond_signal(&this->produce_);
   pthread_mutex_unlock(&this->mutPC_);
 }
+
+_Bool syn_buff_is_empty(synchronized_buffer * this) {
+  _Bool result;
+  pthread_mutex_lock(&this->mutPC_);
+  result = this->buff_.size_ == 0;
+  pthread_mutex_unlock(&this->mutPC_);
+  return result;
+}

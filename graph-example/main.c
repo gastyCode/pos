@@ -1,12 +1,13 @@
 #include <pthread.h>
 #include <time.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 #include "../libgraph/graph.h"
 #include "../libsll/sll.h"
 #include "../libbuffer/synchronized_buffer.h"
 
 typedef struct shared_data {
-  int count_;
+  atomic_bool is_user_active_; 
   synchronized_buffer* input_;
 } shared_data;
 
@@ -24,9 +25,20 @@ void compute_path(void* data) {
   consumer_data* consumer_data = data;
   shortest_path shortest_path;
   coordinates coords;
-  for (int i = 0; i < consumer_data->shared_->count_; i++) {
+  while (consumer_data->shared_->is_user_active_ || !syn_buff_is_empty(consumer_data->shared_->input_)) {
     dijkstra_init(&shortest_path);
-    syn_buff_pop(consumer_data->shared_->input_, &coords);
+    pthread_mutex_lock(&consumer_data->shared_->input_->mutPC_);
+    while (consumer_data->shared_->input_->buff_.size_ == 0 && consumer_data->shared_->is_user_active_) {
+      pthread_cond_wait(&consumer_data->shared_->input_->consume_, &consumer_data->shared_->input_->mutPC_);
+    }
+    if (!consumer_data->shared_->is_user_active_ && consumer_data->shared_->input_->buff_.size_ == 0) {
+      dijkstra_destroy(&shortest_path);
+      pthread_mutex_unlock(&consumer_data->shared_->input_->mutPC_);
+      break;
+    }
+    buffer_pop(&consumer_data->shared_->input_->buff_, &coords);
+    pthread_cond_signal(&consumer_data->shared_->input_->produce_);
+    pthread_mutex_unlock(&consumer_data->shared_->input_->mutPC_);
     dijkstra_find(consumer_data->graph_, coords.from_, coords.to_, &shortest_path);
     sll_add(consumer_data->paths_, &shortest_path);
   }
@@ -37,14 +49,18 @@ void* consume(void* data) {
   return NULL;
 }
 
-void get_user_input(void* data) {
-  producer_data* producer_data = data;
+bool try_get_user_input(coordinates* coords) {
+  printf("Insert from and to: ");
+  return scanf("%d %d", &coords->from_, &coords->to_) != EOF;
+}
+
+void get_user_input(producer_data* data) {
   coordinates coords;
-  for (int i = 0; i < producer_data->shared_->count_; i++) {
-    printf("Insert from and to: ");
-    scanf("%d %d", &coords.from_, &coords.to_);
-    syn_buff_push(producer_data->shared_->input_, &coords);
+  while (try_get_user_input(&coords)) {
+    syn_buff_push(data->shared_->input_, &coords);
   }
+  data->shared_->is_user_active_ = false;
+  pthread_cond_signal(&data->shared_->input_->consume_);
 }
 
 void* produce(void* data) {
@@ -80,10 +96,6 @@ int main(int argc, char *argv[])
     return 1;
   }
 
-  int count;
-  printf("Insert number of paths: ");
-  scanf("%d", &count);
-
   graph graph;
   sll paths;
   synchronized_buffer buffer;
@@ -92,7 +104,7 @@ int main(int argc, char *argv[])
   syn_buff_init(&buffer, 10);
 
   pthread_t thread;
-  shared_data shared = { count, &buffer };
+  shared_data shared = { true, &buffer };
   producer_data producer_data = { &shared };
   consumer_data consumer_data = { &graph, &paths, &shared };
 

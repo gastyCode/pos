@@ -14,3 +14,4 @@ void syn_buff_destroy(synchronized_buffer * this);
 void syn_buff_push(synchronized_buffer * this,
 const coordinates * input);
 void syn_buff_pop(synchronized_buffer * this, coordinates * output);
+_Bool syn_buff_is_empty(synchronized_buffer * this);
