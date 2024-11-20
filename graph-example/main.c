@@ -1,26 +1,54 @@
 #include <pthread.h>
 #include <time.h>
+#include <stdatomic.h>
 #include "../libgraph/graph.h"
 #include "../libsll/sll.h"
+#include "../libbuffer/synchronized_buffer.h"
 
-typedef struct thread_data {
+typedef struct shared_data {
+  int count_;
+  synchronized_buffer* input_;
+} shared_data;
+
+typedef struct consumer_data {
   graph* graph_;
-  int from_;
-  int to_;
   sll* paths_;
-  pthread_mutex_t* mutex_;
-} thread_data;
+  shared_data* shared_;
+} consumer_data;
 
-void* compute_path(void* data) {
-  thread_data* thread_data = data;
+typedef struct producer_data {
+  shared_data* shared_;
+} producer_data;
+
+void compute_path(void* data) {
+  consumer_data* consumer_data = data;
   shortest_path shortest_path;
-  dijkstra_init(&shortest_path);
-  dijkstra_find(thread_data->graph_, thread_data->from_, thread_data->to_, &shortest_path);
+  coordinates coords;
+  for (int i = 0; i < consumer_data->shared_->count_; i++) {
+    dijkstra_init(&shortest_path);
+    syn_buff_pop(consumer_data->shared_->input_, &coords);
+    dijkstra_find(consumer_data->graph_, coords.from_, coords.to_, &shortest_path);
+    sll_add(consumer_data->paths_, &shortest_path);
+  }
+}
 
-  pthread_mutex_lock(thread_data->mutex_);
-  sll_add(thread_data->paths_, &shortest_path);
-  pthread_mutex_unlock(thread_data->mutex_);
-  
+void* consume(void* data) {
+  compute_path(data);
+  return NULL;
+}
+
+void get_user_input(void* data) {
+  producer_data* producer_data = data;
+  coordinates coords;
+  for (int i = 0; i < producer_data->shared_->count_; i++) {
+    printf("Insert from and to: ");
+    scanf("%d %d", &coords.from_, &coords.to_);
+    syn_buff_push(producer_data->shared_->input_, &coords);
+  }
+}
+
+void* produce(void* data) {
+  get_user_input(data);
   return NULL;
 }
 
@@ -52,42 +80,31 @@ int main(int argc, char *argv[])
     return 1;
   }
 
-  srand(time(NULL));
-
-  int threads_count;
+  int count;
   printf("Insert number of paths: ");
-  scanf("%d", &threads_count);
+  scanf("%d", &count);
 
   graph graph;
   sll paths;
-  pthread_mutex_t mutex;
+  synchronized_buffer buffer;
   graph_init_read(&graph, argv[1]);
   sll_init(&paths, sizeof(shortest_path));
-  pthread_mutex_init(&mutex, NULL);
+  syn_buff_init(&buffer, 10);
 
-  pthread_t threads[threads_count];
-  thread_data data[threads_count];
+  pthread_t thread;
+  shared_data shared = { count, &buffer };
+  producer_data producer_data = { &shared };
+  consumer_data consumer_data = { &graph, &paths, &shared };
 
-  for (int i = 0; i < threads_count; i++) {
-    data[i].graph_ = &graph;
-    data[i].paths_ = &paths;
-    data[i].mutex_ = &mutex;
-    printf("From: ");
-    scanf("%d", &data[i].from_);
-    printf("To: ");
-    scanf("%d", &data[i].to_);
-    pthread_create(&threads[i], NULL, compute_path, &data[i]);
-  }
-
-  for (int i = 0; i < threads_count; i++) {
-    pthread_join(threads[i], NULL);
-  }
+  pthread_create(&thread, NULL, &consume, &consumer_data);
+  produce(&producer_data);
+  pthread_join(thread, NULL);
 
   sll_for_each(&paths, &print_whole_path, NULL, NULL, NULL);
   sll_for_each(&paths, &clear_path, NULL, NULL, NULL);
 
   graph_destroy(&graph);
   sll_clear(&paths);
-  pthread_mutex_destroy(&mutex);
+  syn_buff_destroy(&buffer);
   return 0;
 }

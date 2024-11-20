@@ -12,4 +12,5 @@ add_subdirectory(sll-example)
 add_subdirectory(sll-tests)
 
 add_subdirectory(libgraph)
+add_subdirectory(libbuffer)
 add_subdirectory(graph-example)
